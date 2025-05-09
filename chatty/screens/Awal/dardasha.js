@@ -1,69 +1,99 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from "react-native";
-import Feather from "@expo/vector-icons/Feather";
+import DardashaHome from "./DardashaHome";
+import DardashaChat from "./DardashaChat";
+import { Alert } from "react-native";
 
-// Message component
-const MessageComponent = ({ msg }) => (
-  <View style={{ marginBottom: 10 }}>
-    <Text style={{ fontWeight: "bold" }}>{msg.payload}</Text>
-    <Text style={{ fontSize: 10, color: "gray" }}>{msg.time}</Text>
-  </View>
-);
-
-function Dardasha({ msg, setNewMsg, setFinish }) {
-  const [allMessages, setAllMessages] = useState([]);
-  const [newWrittenMsg, setNewWrittenMsg] = useState("");
-  const handleSend = () => {
-    if (newWrittenMsg.trim() === "") return;
-    const newMsg = {
-      payload: newWrittenMsg,
-      time: new Date().toLocaleTimeString(),
-    };
-
-    setAllMessages((prev) => [...prev, newMsg]);
-    setNewMsg(newWrittenMsg); // optional: pass message to parent
-    setFinish((prev) => !prev);
-    setNewWrittenMsg("");
-  };
-  // Append new incoming message
+const Dardasha = ({ msg, setNewMsg, setFinish, newusername, setFriend, sendmsg, setSendMsg, uservslastmessage, setUservslastmessage }) => {
+  const [currentChatUser, setCurrentChatUser] = useState(null);
+  const [messagesPerUser, setMessagesPerUser] = useState({});
+  const [notifications, setNotifications] = useState({});
+  
+  // Handle new incoming messages
   useEffect(() => {
-    if (msg) {
+    if (msg && msg.payload && !msg.mine) {
+      const sender = msg.sender || newusername;
       
-      setAllMessages((prev) => [...prev, msg]);
+      // Update messages store for this user
+      // setMessagesPerUser(prev => ({
+      //   ...prev,
+      //   [sender]: [...(prev[sender] || []), msg]
+      // }));
+      
+      // Update last message in chat list
+      setUservslastmessage(prev => ({
+        ...prev,
+        [sender]: msg.payload
+      }));
+      
+      // If we're not currently chatting with this user, show notification
+      if (currentChatUser !== sender) {
+        // Create notification
+        setNotifications(prev => ({
+          ...prev,
+          [sender]: (prev[sender] || 0) + 1
+        }));
+        
+        // Show alert for new message
+        Alert.alert(
+          `New message from ${sender}`,
+          msg.payload.length > 30 ? msg.payload.substring(0, 30) + '...' : msg.payload,
+          [
+            { text: "View", onPress: () => handleOpenChat(sender) },
+            { text: "Later", style: "cancel" }
+          ]
+        );
+      }
     }
   }, [msg]);
 
-  // Handle sending a message
- 
+  // Function to handle opening a chat
+  const handleOpenChat = (username) => {
+    setCurrentChatUser(username);
+    setFriend(username);
+    
+    // Clear notifications for this user when opening chat
+    if (notifications[username]) {
+      setNotifications(prev => ({
+        ...prev,
+        [username]: 0
+      }));
+    }
+  };
+  
+  // Function to handle going back to home
+  const handleBack = () => {
+    console.log("Back handler in main component called");
+    setCurrentChatUser(null);
+    // Make sure we force re-render by updating state
+    setFriend("");
+  };
 
-  return (
-    <View style={{ flex: 1, padding: 10, backgroundColor: "#fff" }}>
-      <ScrollView style={{ flex: 1 }}>
-        {allMessages.map((message, index) => (
-          <MessageComponent key={index} msg={message} />
-        ))}
-      </ScrollView>
-
-      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
-        <TextInput
-          style={{
-            flex: 1,
-            borderWidth: 1,
-            borderColor: "#ccc",
-            borderRadius: 5,
-            padding: 8,
-            marginRight: 10,
-          }}
-          placeholder="Type a message..."
-          value={newWrittenMsg}
-          onChangeText={setNewWrittenMsg}
-        />
-        <TouchableOpacity onPress={handleSend}>
-          <Feather name="send" size={24} color="black" />
-        </TouchableOpacity>
-      </View>
-    </View>
+  return currentChatUser ? (
+    <DardashaChat
+      friend={currentChatUser}
+      setFinish={setFinish}
+      setNewMsg={setNewMsg}
+      setFriend={setFriend}
+      msg={msg}
+      sendmsg={sendmsg}
+      setSendMsg={setSendMsg}
+      onBack={handleBack}
+      uservslastmessage={uservslastmessage}
+      setUservslastmessage={setUservslastmessage}
+      newusername={newusername}
+      messagesPerUser={messagesPerUser}
+      setMessagesPerUser={setMessagesPerUser}
+    />
+  ) : (
+    <DardashaHome 
+      newusername={newusername} 
+      openChat={handleOpenChat} 
+      uservslastmessage={uservslastmessage} 
+      setUservslastmessage={setUservslastmessage} 
+      setFriend={setFriend}
+      notifications={notifications}
+    />
   );
-}
+};
 
 export default Dardasha;

@@ -1,37 +1,53 @@
 import React, { useEffect, useState } from "react";
+import Feather from '@expo/vector-icons/Feather';
+import { useNavigation } from "@react-navigation/native";
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
   StyleSheet,
+  Platform,
+  StatusBar,
+  TextInput,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const handleSearch = async ({ setSpecialMessage, username, setList }) => {
-  const url = `https://d7b0-196-200-133-182.ngrok-free.app/existing-friends/?username=${username}`;
+  const url =
+    Platform.OS == "web"
+      ? `http://localhost:8080/existing-friends?username=${username}`
+      : `https://cfaf-196-200-133-182.ngrok-free.app/existing-friends?username=${username}`;
   try {
-    const res = await fetch(url);
-    if (res.status === 403) {
-      setSpecialMessage(
-        "The server was not ok with your request. Maybe you are offline!",
-      );
-    } else {
-      const response = await res.json();
-      console.log(response);
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    const text = await res.text();
+    console.log("Response Text:", text);
+    try {
+      const json = JSON.parse(text);
       setSpecialMessage("Here are your available friends:");
-      setList(response.friends || []);
+      setList(json.friends || []);
+      console.log(json.friends)
+    } catch (err) {
+      console.error("JSON Parse Error:", err);
+      setSpecialMessage("The response could not be parsed as JSON.");
     }
   } catch (err) {
     setSpecialMessage("An error occurred. Please try again!");
-    console.error("Error: ", err);
+    console.error("Fetch Error: ", err);
   }
 };
 
-function Search({ navigation }) {
+function Search({ wsConnected, onFriendSelect }) {
   const [username, setUsername] = useState("");
   const [specialMessage, setSpecialMessage] = useState("");
   const [list, setList] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const navigation = useNavigation();
+  const [refresh, setrefresh] = useState(false);
 
   useEffect(() => {
     const getUsername = async () => {
@@ -50,32 +66,84 @@ function Search({ navigation }) {
     getUsername();
   }, [navigation]);
 
+  useEffect(() => {
+    if (!username || !wsConnected) return;
+    handleSearch({ setSpecialMessage, username, setList });
+  }, [username, wsConnected, refresh]);
+
+  const filteredList = searchQuery 
+    ? list.filter(item => 
+        item.toLowerCase().includes(searchQuery.toLowerCase()) && 
+        item !== username
+      )
+    : list.filter(item => item !== username);
+
   const renderFriend = ({ item }) => (
-    <TouchableOpacity style={styles.friendItem}>
-      <Text style={styles.friendText}>{item}</Text>
+    <TouchableOpacity 
+      style={styles.friendItem} 
+      onPress={() => {
+        onFriendSelect(item)
+        navigation.navigate("Dardasha");
+      }}
+    >
+      <View style={styles.avatarContainer}>
+        <Text style={styles.avatarText}>{item.charAt(0).toUpperCase()}</Text>
+      </View>
+      <View style={styles.friendInfo}>
+        <Text style={styles.friendName}>{item}</Text>
+        <Text style={styles.lastMessage}>Tap to start chatting</Text>
+      </View>
+      <Text style={styles.timeStamp}>now</Text>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={styles.searchButton}
-        onPress={() => handleSearch({ setSpecialMessage, username, setList })}
-      >
-        <Text style={styles.searchButtonText}>Search for online friends</Text>
-      </TouchableOpacity>
+      <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+      
+      {/* Simplified Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Chatty</Text>
+        <TouchableOpacity style={styles.headerIcon} onPress={() => setrefresh(prev => !prev)}>
+          <Feather name="refresh-cw" size={22} color="white" />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Feather name="search" size={20} color="#7D8A96" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search"
+            placeholderTextColor="#7D8A96"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+      </View>
+
       {specialMessage ? (
         <View style={styles.messageContainer}>
-          <Text style={styles.specialMessage}>{specialMessage}</Text>
-          {list && list.length > 0 ? (
+          {specialMessage !== "Here are your available friends:" && (
+            <Text style={styles.specialMessage}>{specialMessage}</Text>
+          )}
+          
+          {filteredList && filteredList.length > 0 ? (
             <FlatList
-              data={list.filter((e) => e !== username)}
+              data={filteredList}
               keyExtractor={(item) => item}
               renderItem={renderFriend}
               contentContainerStyle={styles.listContainer}
             />
           ) : (
-            <Text style={styles.noFriendsText}>No friends found.</Text>
+            <View style={styles.emptyStateContainer}>
+              <Feather name="users" size={60} color="#D0D6DD" />
+              <Text style={styles.noFriendsText}>No contacts found</Text>
+              <Text style={styles.noFriendsSubText}>
+                {searchQuery ? "Try a different search" : "Refresh to find friends"}
+              </Text>
+            </View>
           )}
         </View>
       ) : null}
@@ -86,48 +154,125 @@ function Search({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "#FFFFFF",
   },
-  searchButton: {
-    backgroundColor: "#4CAF50",
-    padding: 12,
-    borderRadius: 8,
+  header: {
+    backgroundColor: "#075E54",
+    paddingTop: Platform.OS === "ios" ? 48 : 12,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
-  searchButtonText: {
-    color: "#fff",
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "600",
+  },
+  headerIcon: {
+    padding: 5,
+  },
+  searchContainer: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEFF1",
+  },
+  searchBar: {
+    backgroundColor: "#F6F6F6",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
     fontSize: 16,
-    fontWeight: "bold",
+    color: "#37474F",
   },
   messageContainer: {
-    marginTop: 16,
+    flex: 1,
   },
   specialMessage: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 8,
-    color: "#333",
+    fontSize: 14,
+    margin: 16,
+    color: "#d32f2f",
+    textAlign: "center",
+    backgroundColor: "#ffebee",
+    padding: 12,
+    borderRadius: 8,
   },
   listContainer: {
-    marginTop: 8,
+    paddingBottom: 16,
   },
   friendItem: {
-    padding: 12,
-    backgroundColor: "#e0e0e0",
-    borderRadius: 8,
-    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEFF1",
   },
-  friendText: {
-    fontSize: 16,
-    color: "#333",
+  avatarContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#075E54",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  avatarText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 22,
+  },
+  friendInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  friendName: {
+    fontSize: 17,
+    fontWeight: "500",
+    color: "#202020",
+    marginBottom: 3,
+  },
+  lastMessage: {
+    fontSize: 14,
+    color: "#8A8A8A",
+  },
+  timeStamp: {
+    fontSize: 12,
+    color: "#075E54",
+    marginRight: 4,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
   noFriendsText: {
-    fontSize: 16,
-    color: "#888",
+    fontSize: 18,
+    fontWeight: "500",
+    color: "#636363",
+    marginTop: 12,
+  },
+  noFriendsSubText: {
+    fontSize: 14,
+    color: "#8A8A8A",
+    marginTop: 8,
     textAlign: "center",
-    marginTop: 16,
   },
 });
 

@@ -43,7 +43,7 @@ function Login({ navigation }) {
     try {
       // This URL format needs to match your server configuration
       const url =
-        "https://d7b0-196-200-133-182.ngrok-free.app/user-validation?username=" +
+        "https://cfaf-196-200-133-182.ngrok-free.app/user-validation?username=" +
         username;
 
       const response = await fetch(url);

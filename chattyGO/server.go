@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -17,11 +17,11 @@ var registeredClients = make(map[string]*client)
 var clientsMutex sync.Mutex
 
 type msg struct {
-	Time             string `json:"time"`
-	TypeMsg          string `json:"typeMsg"`
-	Sender_username  string `json:"sender"`
+	Time              string `json:"time"`
+	TypeMsg           string `json:"typeMsg"`
+	Sender_username   string `json:"sender"`
 	Receiver_username string `json:"receiver"`
-	Payload          string `json:"payload"`
+	Payload           string `json:"payload"`
 }
 
 type Friends struct {
@@ -29,8 +29,8 @@ type Friends struct {
 }
 
 type client struct {
-	socket *websocket.Conn
-	mu     sync.Mutex
+	socket     *websocket.Conn
+	mu         *sync.Mutex
 	lastActive time.Time
 }
 
@@ -62,7 +62,6 @@ func (c *client) listenAndforward() {
 		}
 
 		log.Printf("Received message: %+v", castedMsg)
-
 		if castedMsg.TypeMsg == "logout" {
 			log.Printf("User %s logging out", castedMsg.Sender_username)
 			clientsMutex.Lock()
@@ -90,6 +89,25 @@ func (c *client) listenAndforward() {
 			receiverClient.mu.Unlock()
 		} else {
 			log.Printf("Receiver %s not found or offline", castedMsg.Receiver_username)
+			response := msg{
+				Time:              "",
+				TypeMsg:           "offline",
+				Sender_username:   "golang",
+				Receiver_username: castedMsg.Sender_username,
+				Payload:           castedMsg.Receiver_username + " is offline!",
+			}
+			clientsMutex.Lock()
+			sender, online := registeredClients[castedMsg.Sender_username]
+			clientsMutex.Unlock()
+			if online {
+				systeMessage, _ := json.Marshal(response)
+				sender.mu.Lock()
+				sender.socket.WriteMessage(websocket.TextMessage, systeMessage)
+				sender.mu.Unlock()
+				fmt.Println("Sender tried to reach an offline user")
+			}
+
+			// Error not handled here but okay
 		}
 	}
 
@@ -109,14 +127,14 @@ func (c *client) listenAndforward() {
 
 // A simple heartbeat to check client connections
 func startHeartbeat() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
 		for range ticker.C {
 			clientsMutex.Lock()
 			now := time.Now()
 			for username, cl := range registeredClients {
 				// Check if client has been inactive for more than 2 minutes
-				if cl != nil && now.Sub(cl.lastActive) > 2*time.Minute {
+				if cl != nil && now.Sub(cl.lastActive) > 30*time.Minute {
 					log.Printf("Client %s timed out due to inactivity", username)
 					delete(registeredClients, username)
 					if cl.socket != nil {
@@ -206,8 +224,8 @@ func Server() {
 
 		clientMutex := sync.Mutex{}
 		newClient := &client{
-			socket: c,
-			mu:     clientMutex,
+			socket:     c,
+			mu:         &clientMutex,
 			lastActive: time.Now(),
 		}
 

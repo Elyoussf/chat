@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Text,
+  Platform,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -20,21 +21,26 @@ import Dardasha from "../Awal/dardasha";
 import Search from "../Search/search";
 
 const Tab = createBottomTabNavigator();
-const SERVER_URL = "wss://d7b0-196-200-133-182.ngrok-free.app"; // Base server URL
 
 function HomeScreen({ navigation }) {
+  
+  const [uservslastmessage,setUservslastmessage] = useState({})
+  const SERVER_URL = Platform.OS === "android" ? "wss://cfaf-196-200-133-182.ngrok-free.app" : "ws://localhost:8080";
+  const [friend, setFriend] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [username, setUsername] = useState("");
   const [newmsg, setNewMsg] = useState("");
+  const [sendmsg,setSendMsg] = useState("")
   const [finish, setFinish] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
+  const reconnectAttempt = useRef(true);
   const [loading, setLoading] = useState(true);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
+  const tabRef = useRef(null);
 
-  // Function to send messages
-  const sendMessage = (messageObj) => {
+  const sendMessage = (messageObj, username) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.log("WebSocket not connected, can't send message");
       return false;
@@ -49,6 +55,8 @@ function HomeScreen({ navigation }) {
 
       const message = {
         time: currentTime,
+        typeMsg: "regular",
+
         ...messageObj,
       };
 
@@ -85,24 +93,24 @@ function HomeScreen({ navigation }) {
       };
 
       ws.onerror = (e) => {
-        console.error("WebSocket error:", e);
         setWsConnected(false);
       };
 
       ws.onclose = (e) => {
         console.log("WebSocket closed:", e.code, e.reason);
+
         setWsConnected(false);
 
         // Try to reconnect if not intentionally closed
-        if (reconnectAttempts.current < maxReconnectAttempts) {
+        if (
+          reconnectAttempts.current < maxReconnectAttempts &&
+          reconnectAttempt.current
+        ) {
           reconnectAttempts.current++;
           setTimeout(setupWebSocket, 3000); // Retry after 3 seconds
         } else {
-          Alert.alert(
-            "Connection Lost",
-            "Could not reconnect to the server. Please log in again.",
-            [{ text: "OK", onPress: handleLogout }],
-          );
+          AsyncStorage.removeItem("username");
+          navigation.navigate("Login")
         }
       };
 
@@ -149,19 +157,15 @@ function HomeScreen({ navigation }) {
 
   // Send message when finish state changes
   useEffect(() => {
-    if (finish && newmsg && username && wsConnected) {
+    if (finish && sendmsg && username && wsConnected) {
       sendMessage({
-        typeMsg: "regular",
         sender: username,
-        receiver:
-          username[username.length - 1] +
-          username.slice(1, username.length - 1) +
-          username[0],
-        payload: newmsg,
+        receiver: sendmsg.receiver,
+        payload: sendmsg.payload,
       });
       setFinish(false);
     }
-  }, [finish, newmsg, username, wsConnected]);
+  }, [finish, sendmsg, username, wsConnected]);
 
   const handleLogout = async () => {
     try {
@@ -170,21 +174,19 @@ function HomeScreen({ navigation }) {
         sendMessage({
           typeMsg: "logout",
           sender: username,
-          receiver:
-            username[username.length - 1] +
-            username.slice(1, username.length - 1) +
-            username[0],
+          receiver:"System",
           payload: "",
         });
 
         // Close WebSocket
+        // js should not reattempt Connection
+        reconnectAttempt.current = false;
         wsRef.current.close();
       }
 
       // Clear stored username
       await AsyncStorage.removeItem("username");
 
-      Alert.alert("Logged Out", "You have been logged out successfully.");
       navigation.navigate("Login");
     } catch (error) {
       console.error("Error during logout:", error);
@@ -194,6 +196,12 @@ function HomeScreen({ navigation }) {
       );
     }
   };
+
+  const handleSearchSelect = (selectedFriend) => {
+    setFriend(selectedFriend);
+    
+  };
+  
 
   if (loading) {
     return (
@@ -235,6 +243,7 @@ function HomeScreen({ navigation }) {
       </View>
 
       <Tab.Navigator
+        ref={tabRef}
         screenOptions={{
           headerShown: false,
           tabBarStyle: {
@@ -260,14 +269,21 @@ function HomeScreen({ navigation }) {
                 <Text
                   style={[styles.tabLabel, focused && styles.tabLabelFocused]}
                 >
-                  Search
+                  
                 </Text>
               </View>
             ),
             tabBarLabel: () => null,
           }}
         >
-          {(props) => <Search {...props} navigation={navigation} />}
+          {(props) => (
+            <Search
+              {...props}
+              navigation={navigation}
+              wsConnected={wsConnected}
+              onFriendSelect={handleSearchSelect}
+            />
+          )}
         </Tab.Screen>
 
         <Tab.Screen
@@ -280,11 +296,6 @@ function HomeScreen({ navigation }) {
                   size={24}
                   color={focused ? "#007bff" : "gray"}
                 />
-                <Text
-                  style={[styles.tabLabel, focused && styles.tabLabelFocused]}
-                >
-                  Chat
-                </Text>
               </View>
             ),
             tabBarLabel: () => null,
@@ -294,9 +305,15 @@ function HomeScreen({ navigation }) {
             <Dardasha
               {...props}
               msg={newmsg}
-              setNewMsg={setNewMsg}
+              setFriend = {setFriend}
               setFinish={setFinish}
-              wsConnected={wsConnected}
+              newusername={friend}
+              sendmsg = {sendmsg}
+              setSendMsg = {setSendMsg}
+              setNewMsg = {setNewMsg}
+              setUservslastmessage= {setUservslastmessage}
+              uservslastmessage = {uservslastmessage}
+
             />
           )}
         </Tab.Screen>
@@ -379,3 +396,4 @@ const styles = StyleSheet.create({
 });
 
 export default HomeScreen;
+
